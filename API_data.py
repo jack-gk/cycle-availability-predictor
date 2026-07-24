@@ -12,7 +12,7 @@ def call_api():
     
     time_string = datetime.now().strftime("%Y-%m-%d-H%H-M%M")
 
-    with open(f"C:/Users/jaack/Desktop/cycle-availability-predictor/data/bronze/{time_string}.json", "a") as f:
+    with open(f"C:/Users/jaack/Desktop/cycle-availability-predictor/data/bronze/{time_string}.json", "w") as f:
         json.dump(response, f, indent=2)
         
 call_api()

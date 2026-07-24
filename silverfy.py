@@ -2,6 +2,7 @@ import os
 import json
 
 data_timegrouped = {}
+data_cleaned = {}
 
 for dirName, subDirList, fileList in os.walk('C:/Users/jaack/Desktop/cycle-availability-predictor/data/bronze'):
     for file in fileList:
@@ -9,8 +10,6 @@ for dirName, subDirList, fileList in os.walk('C:/Users/jaack/Desktop/cycle-avail
             with open(f"{dirName}/{file}") as f:
                 d = json.load(f)
                 data_timegrouped[file]=d
-
-print(data_timegrouped.keys())
 
 for data_in in data_timegrouped.values():
     
@@ -45,19 +44,23 @@ for data_in in data_timegrouped.values():
         lat = ins["lat"]
         lon = ins["lon"]
 
-        print("ID:",id)
-        print("Common Name:",location)
-        print("Type:",placeType)
-        print("terminal_id:",terminalid)
-        print("Installed:",installed)
-        print("Locked:",locked)
-        print("Install Date:",checkNone(install_date))
-        print("Removal Date:",checkNone(removal_date))
-        print("Temperary:",temp)
-        print("Bikes Available:",bikes_av)
-        print("Bikes Unavailable:",bikes_unav)
-        print("Total Bikes:",total_bikes)
-        print("Standard Bikes:",stand_bike)
-        print("E-Bikes:",e_bike)
-        print("Latitude:",lat)
-        print("Longitude:",lon)
+        data_cleaned["datetime"]=data_in
+        data_cleaned["id"]=ins["id"]
+        data_cleaned["commonName"]=ins["commonName"]
+        data_cleaned["type"]=ins["placeType"]
+        data_cleaned["terminalId"]=addP[0]["value"]
+        data_cleaned["installed"]=addP[1]["value"]
+        data_cleaned["locked"]=addP[1]["value"]
+        data_cleaned["install_date"]=addP[1]["value"]
+        data_cleaned["removal_date"]=addP[1]["value"]
+        data_cleaned["temp"]=addP[1]["value"]
+        data_cleaned["bikes_av"]=addP[1]["value"]
+        data_cleaned["bikes_unav"]=addP[1]["value"]
+        data_cleaned["total_bikes"]=addP[1]["value"]
+        data_cleaned["stand_bike"]=addP[1]["value"]
+        data_cleaned["e_bike"]=addP[1]["value"]
+        data_cleaned["lat"]=addP[1]["value"]
+        data_cleaned["lon"]=addP[1]["value"]
+
+        print(data_cleaned)
+        
