@@ -16,15 +16,21 @@ time_input = datetime(2026,7,24,12,45)
 
 for file in list(bronze_path.iterdir()):
 
-    time_track = name_layout+(time_input).strftime("%Y-%m-%d-H%H-M%M")+".json"
-    
-    if file.name != time_track:
+    time_track = name_layout+(time_input).strftime("%Y-%m-%d-H%H-M%M")
+
+    if file.name == (time_track+"_FAILED.json"):
+        # Check if file failed to download
+        print(f"{file.name} failed to download")
+        # TODO 
+        # Show the error code
+
+    elif file.name != (time_track+".json"):
         # Branch if file doesn't exist
         print(f"{file.name} wasn't found")
-        print(f"{time_track} wasn't found")
+
     elif not file.read_bytes():
-        # Brand if file empty
-        print(f"File empty: {file.name}")
+        # Branch if file empty
+        print(f"{file.name} is empty")
     else:
         # Branch if no problem
         pass
