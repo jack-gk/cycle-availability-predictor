@@ -92,14 +92,14 @@ def transform_snapshot(file: Path) -> tuple[pd.DataFrame | None, dict[str, str] 
 
     missing_columns = []
 
-    for column in REFERENCE_COLUMNS:
+    for column in REQUIRED_COLUMNS:
         if column not in raw_df.columns:
             missing_columns.append(column)
 
     if missing_columns:
         return None, {"file":file.name, "reason":f"Missing column(s): {missing_columns}"}
 
-    df = raw_df[REQUIRED_COLUMNS]
+    df = raw_df[REQUIRED_COLUMNS].copy()
     
     df["date_time"] = date_time
 
@@ -191,7 +191,6 @@ def transform_day(day: str) -> pd.DataFrame | None:
             continue
         
         observation_dfs.append(observation_df)
-        logging.info(file.name)
 
     if not observation_dfs:
             return None, failed_files
@@ -222,39 +221,56 @@ mode = "catchup"
 
 def main() -> None:
 
-    def findStart() -> datetime:
+    def find_unwritten_days() -> set[datetime.date]:
+        unique_dates = set()
+        unique_bronze = set()
+
         for file in BRONZE_PATH.iterdir():
+
             try:
                 date_text = file.name[10:20]
-                parsed_date = datetime.strptime( date_text, "%Y-%m-%d").date()
+                parsed_date = datetime.strptime(date_text, "%Y-%m-%d").date()
+                unique_bronze.add(parsed_date)
+                if not (SILVER_PATH / "observations" / f"date={parsed_date}" / "observation.parquet").exists():
+                    unique_dates.add(parsed_date)
+
             except Exception as e:
-                logging.warning("Error:",e)
+                logging.warning(f"Error: {e}")
+
+        if len(unique_dates)>1:
+            latest = max(unique_bronze)
+            unique_dates.remove(latest)
+            logging.info(f"REMOVING {latest} due to being most recent partial file")
+            logging.info(f"Processing dates {unique_dates}...")
+            return(sorted(unique_dates))
+        else:
+            logging.warning("No files left")
+            return []
+
+        
         
 
     if mode == "catchup":
         logging.info("Catch Up Loading...")
-        start_day = datetime(2026, 8, 24)
-        end_day = datetime(2026, 8, 29)
 
-        while start_day <= end_day:
-            day_string = start_day.strftime("%Y-%m-%d")
+        days = find_unwritten_days()
 
-            logging.info("Processing catch-up date: %s", day_string)
+        for day in days:
 
-            daily_df, failed_files = transform_day(day_string)
+            logging.info("Processing catch-up date: %s", day)
+
+            daily_df, failed_files = transform_day(day)
 
             if daily_df is not None:
                 save_daily_observation(
                     daily_df,
-                    day_string,
+                    day
                 )
             else:
-                logging.warning(f"No file for date {day_string}")
-
-            start_day = start_day + timedelta(1)
+                logging.warning(f"No file for date {day}")
 
 
-    if mode == "day":
+    elif mode == "day":
         day_string = "2026-07-25"
         daily_df, failed_files = transform_day(day_string)
         if daily_df is not None:
