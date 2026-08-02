@@ -1,17 +1,19 @@
 import json
 import pandas as pd
 from pathlib import Path
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 import logging
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(levelname)s: %(message)s",
-    force=True
+    force=True,
 )
 
-BRONZE_PATH = Path.cwd()/"data"/"bronze"
-SILVER_PATH = Path.cwd() / "data" / "silver"
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+BRONZE_PATH = PROJECT_ROOT / "data" / "bronze"
+SILVER_PATH = PROJECT_ROOT / "data" / "silver"
 OBSERVATIONS_PATH = SILVER_PATH / "observations"
 STATIONS_PATH = SILVER_PATH / "stations"
 
@@ -171,7 +173,7 @@ def save_daily_observation(daily_df: pd.DataFrame, day: str) -> Path:
 
     return output_file
 
-def transform_day(day: str) -> tuple[pd.DataFrame | None, dict[str, str] | None]:
+def transform_day(day: str) -> pd.DataFrame | None:
     observation_dfs = []
     failed_files = []
 
@@ -180,6 +182,9 @@ def transform_day(day: str) -> tuple[pd.DataFrame | None, dict[str, str] | None]
     )
 
     for file in day_files:
+
+        if not file.name.startswith(f"tfl-bikes-{day}"):
+            continue
 
         observation_df, error = transform_snapshot(file)
 
@@ -218,7 +223,7 @@ mode = "catchup"
 
 def main() -> None:
 
-    def find_unwritten_days() -> list[date]:
+    def find_unwritten_days() -> set[datetime.date]:
         unique_dates = set()
         unique_bronze = set()
 
