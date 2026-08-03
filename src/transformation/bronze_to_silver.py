@@ -37,6 +37,16 @@ REQUIRED_COLUMNS = [
     "additionalProperties"
 ]
 
+COLUMN_RENAME = {
+    "id": "station_id",
+    "date_time": "observed_at",
+    "NbBikes": "num_bikes",
+    "NbEBikes": "num_ebikes",
+    "NbStandardBikes": "num_standard_bikes",
+    "NbDocks": "num_docks",
+    "NbEmptyDocks": "num_empty_docks"
+}
+
 def checkFile(file: Path):
 
     def fail(name: str, reason: str) -> tuple[pd.DataFrame | None, datetime | None, dict[str, str] | None]:
@@ -87,48 +97,62 @@ def checkFile(file: Path):
 
 def transform_snapshot(file: Path) -> tuple[pd.DataFrame | None, dict[str, str] | None]:
 
-    raw_df, date_time, error = checkFile(file)
+    try:
+        raw_df, date_time, error = checkFile(file)
 
-    if error is not None:
-         return None, error
+        if error is not None:
+            return None, error
 
-    missing_columns = []
+        missing_columns = []
 
-    for column in REQUIRED_COLUMNS:
-        if column not in raw_df.columns:
-            missing_columns.append(column)
+        for column in REQUIRED_COLUMNS:
+            if column not in raw_df.columns:
+                missing_columns.append(column)
 
-    if missing_columns:
-        return None, {"file":file.name, "reason":f"Missing column(s): {missing_columns}"}
+        if missing_columns:
+            return None, {"file":file.name, "reason":f"Missing column(s): {missing_columns}"}
 
-    df = raw_df[REQUIRED_COLUMNS].copy()
-    
-    df["date_time"] = date_time
+        df = raw_df[REQUIRED_COLUMNS].copy()
+        
+        df["date_time"] = date_time
 
-    df_long = df.explode("additionalProperties",True)
+        df_long = df.explode("additionalProperties",True)
 
-    properties = pd.json_normalize(
-        df_long["additionalProperties"]
-    )
-    dfx = pd.concat(
-        [
-            df_long[["id", "date_time"]],
-            properties
-        ],
-        axis=1
-    ) 
-    
-    dfx_filtered = dfx[["id", "date_time", "key", "value"]]
+        properties = pd.json_normalize(
+            df_long["additionalProperties"]
+        )
+        dfx = pd.concat(
+            [
+                df_long[["id", "date_time"]],
+                properties
+            ],
+            axis=1
+        ) 
+        
+        dfx_filtered = dfx[["id", "date_time", "key", "value"]]
 
-    wanted_rows = dfx_filtered[dfx_filtered["key"].isin(WANTED_COLUMNS)]
+        wanted_rows = dfx_filtered[dfx_filtered["key"].isin(WANTED_COLUMNS)]
 
-    df_pivot = wanted_rows.pivot(index=["id", "date_time"], columns="key", values="value")
+        df_pivot = wanted_rows.pivot(index=["id", "date_time"], columns="key", values="value")
 
-    new_df = df_pivot.loc[:, WANTED_COLUMNS].copy()
-    new_df = new_df.astype("Int64")
-    new_df = new_df.reset_index()
+        new_df = df_pivot.loc[:, WANTED_COLUMNS].copy()
+        new_df = new_df.astype("Int64")
+        new_df = new_df.reset_index()
 
-    return new_df, None
+        return new_df, None
+
+    except KeyError as e:
+        logging.log("KeyError, Possibly missing property")
+        return None, {"file":file.name, "reason":f"KeyError: {e}"}
+
+    except ValueError as e:
+        logging.log("ValueError %s",file.name)
+        return None, {"file":file.name, "reason":f"ValueError: {e}"}
+
+    except Exception as e:
+        logging.log("Unexpected Error %s",file.name)
+        return None, {"file":file.name, "reason":f"Exception: {e}"}
+
 
 def create_station_ref(file: Path) -> tuple[pd.DataFrame | None, dict[str, str] | None]:
 
@@ -183,9 +207,6 @@ def transform_day(day: str) -> pd.DataFrame | None:
 
     for file in day_files:
 
-        if not file.name.startswith(f"tfl-bikes-{day}"):
-            continue
-
         observation_df, error = transform_snapshot(file)
 
         if error is not None:
@@ -214,43 +235,52 @@ def transform_day(day: str) -> pd.DataFrame | None:
         failed_count,
     )
 
+    daily_df.drop_duplicates(subset=["station_id", "observed_at"])
+
     return daily_df, failed_files
+
+def find_unwritten_days() -> set[datetime.date]:
+    unique_dates = set()
+    unique_bronze = set()
+
+    for file in BRONZE_PATH.iterdir():
+
+        try:
+            date_text = file.name[10:20]
+            parsed_date = datetime.strptime(date_text, "%Y-%m-%d").date()
+            unique_bronze.add(parsed_date)
+
+            if not (SILVER_PATH / "observations" / f"date={parsed_date}" / "observation.parquet").exists():
+                unique_dates.add(parsed_date)
+
+        except Exception as e:
+            logging.warning(f"Error: {e}")
+
+    if len(unique_dates)>1:
+        latest = max(unique_bronze)
+        unique_dates.remove(latest)
+
+        try:
+            unique_dates.remove(latest)
+        except Exception:
+            logging.info("Latest Synced Day File Already written, skipping deletion...")
+
+
+        logging.info(f"REMOVING {latest} due to being most recent partial file")
+        logging.info(f"Processing dates {unique_dates}...")
+        return(sorted(unique_dates))
+    else:
+        logging.warning("No files left")
+        return []
+
 
 #mode = "instance"
 #mode = "day"
 #mode = "ref"
 mode = "catchup"
+mode = "none"
 
 def main() -> None:
-
-    def find_unwritten_days() -> set[datetime.date]:
-        unique_dates = set()
-        unique_bronze = set()
-
-        for file in BRONZE_PATH.iterdir():
-
-            try:
-                date_text = file.name[10:20]
-                parsed_date = datetime.strptime(date_text, "%Y-%m-%d").date()
-                unique_bronze.add(parsed_date)
-                if not (SILVER_PATH / "observations" / f"date={parsed_date}" / "observation.parquet").exists():
-                    unique_dates.add(parsed_date)
-
-            except Exception as e:
-                logging.warning(f"Error: {e}")
-
-        if len(unique_dates)>1:
-            latest = max(unique_bronze)
-            unique_dates.remove(latest)
-            logging.info(f"REMOVING {latest} due to being most recent partial file")
-            logging.info(f"Processing dates {unique_dates}...")
-            return(sorted(unique_dates))
-        else:
-            logging.warning("No files left")
-            return []
-
-        
-        
 
     if mode == "catchup":
         logging.info("Catch Up Loading...")
@@ -296,7 +326,8 @@ def main() -> None:
             if fail is None:
                 print(df_ref.head(10))
                 save_station_ref(df_ref)
-
+    #testing
+    find_unwritten_days()
 
 if __name__ == "__main__":
     main()
