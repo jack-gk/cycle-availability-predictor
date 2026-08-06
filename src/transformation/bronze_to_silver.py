@@ -52,8 +52,11 @@ def checkFile(file: Path):
     def fail(name: str, reason: str) -> tuple[pd.DataFrame | None, datetime | None, dict[str, str] | None]:
             logging.warning("Skipping: %s (%s)", name, reason)
             return(None, None, {"file": name, "reason": reason})
+    if not file:
+            return fail(file.name, "No input")
 
     if not file.is_file():
+            print(type(file))
             return fail(file.name, "Not a file")
                 
     if file.stat().st_size == 0:
@@ -98,29 +101,36 @@ def checkFile(file: Path):
 def transform_snapshot(file: Path) -> tuple[pd.DataFrame | None, dict[str, str] | None]:
 
     try:
+        print("stage 1")
         raw_df, date_time, error = checkFile(file)
-
+        print("stage 2")
         if error is not None:
             return None, error
 
         missing_columns = []
+        print("stage 3")
 
         for column in REQUIRED_COLUMNS:
             if column not in raw_df.columns:
                 missing_columns.append(column)
+        print("stage 4")
 
         if missing_columns:
             return None, {"file":file.name, "reason":f"Missing column(s): {missing_columns}"}
+        print("stage 5")
 
         df = raw_df[REQUIRED_COLUMNS].copy()
         
         df["date_time"] = date_time
+        print("stage 6")
 
         df_long = df.explode("additionalProperties",True)
+        print("stage 7")
 
         properties = pd.json_normalize(
             df_long["additionalProperties"]
         )
+        print("stage 8")
         dfx = pd.concat(
             [
                 df_long[["id", "date_time"]],
@@ -128,16 +138,27 @@ def transform_snapshot(file: Path) -> tuple[pd.DataFrame | None, dict[str, str] 
             ],
             axis=1
         ) 
+        print("stage 9")
         
         dfx_filtered = dfx[["id", "date_time", "key", "value"]]
-
+        print("stage 10")
         wanted_rows = dfx_filtered[dfx_filtered["key"].isin(WANTED_COLUMNS)]
+        print("stage 11")
+
+        duplicate_count = wanted_rows.duplicated(
+            subset=["id","date_time"]
+        ).sum()
+
+        if duplicate_count:
+            logging.warning(f"{duplicate_count} duplicates detected")
+            wanted_rows = wanted_rows.drop_duplicates(subset=["id","date_time"], keep="first")
 
         df_pivot = wanted_rows.pivot(index=["id", "date_time"], columns="key", values="value")
-
+        print("stage 12")
         new_df = df_pivot.loc[:, WANTED_COLUMNS].copy()
         new_df = new_df.astype("Int64")
         new_df = new_df.reset_index()
+        print("stage x")
 
         return new_df, None
 
@@ -159,7 +180,7 @@ def create_station_ref(file: Path) -> tuple[pd.DataFrame | None, dict[str, str] 
     raw_df, date_time, error = checkFile(file)
 
     if error is not None:
-         return None, error
+        return None, error
 
     missing_columns = []
 
@@ -235,7 +256,25 @@ def transform_day(day: str) -> pd.DataFrame | None:
         failed_count,
     )
 
-    daily_df.drop_duplicates(subset=["station_id", "observed_at"])
+    duplicate_mask = daily_df.duplicated(
+        subset=["station_id", "observed_at"],
+        keep="first",
+    )
+
+    duplicate_count = duplicate_mask.sum()
+
+    if duplicate_count > 0:
+        logging.warning(
+            "Found %d duplicate station/timestamp rows",
+            duplicate_count,
+        )
+
+        daily_df = daily_df.drop_duplicates(
+            subset=["station_id", "observed_at"],
+            keep="first",
+        )
+    else:
+        logging.info("No duplicate station/timestamp rows found")
 
     return daily_df, failed_files
 
@@ -326,8 +365,6 @@ def main() -> None:
             if fail is None:
                 print(df_ref.head(10))
                 save_station_ref(df_ref)
-    #testing
-    find_unwritten_days()
 
 if __name__ == "__main__":
     main()
